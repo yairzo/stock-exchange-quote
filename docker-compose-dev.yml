@@ -12,8 +12,10 @@ services:
       ENV_TYPE: "dev"
     links:
       - "redis:alpine"
+      - "dynamodb"
     depends_on:
       - redis
+      - dynamodb
   redis:
     image: "redis:alpine"
     command: redis-server --requirepass sOmE_sEcUrE_pAsS
@@ -24,3 +26,9 @@ services:
       - $PWD/redis.conf:/usr/local/etc/redis/redis.conf
     environment:
       - REDIS_REPLICATION_MODE=master
+  dynamodb:
+    image: amazon/dynamodb-local
+    hostname: dynamodb-local
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"

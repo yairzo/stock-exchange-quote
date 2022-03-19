@@ -1,4 +1,4 @@
-.idea
-redis.conf
-redis-data
-*.iml
+/redis.conf
+/redis-data
+/*.iml
+/.idea/
