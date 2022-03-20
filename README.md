@@ -3,6 +3,10 @@
 The service query Yahoo finance to retrieve stock exchange quote.
 It is planned to run as a container on AWS
 
+To run the service use:
+  
+   docker-compose -f docker-compose-dev.yml up
+
 For initialization use:
 
   http://0.0.0.0:5001/init
