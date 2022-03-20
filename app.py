@@ -88,7 +88,7 @@ def get_quote(symbol):
                       'Safari/537.36'
     }
     quote = redis_client.get(symbol)
-    if False and quote:
+    if quote:
         return json.loads(quote)
     else:
         response = requests.get('https://query1.finance.yahoo.com/v7/finance/quote?symbols='+symbol,
