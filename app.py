@@ -1,4 +1,3 @@
-from decimal import Decimal
 import boto3
 import requests
 import json
@@ -9,9 +8,6 @@ from flask import Flask, jsonify
 from flask_httpauth import HTTPBasicAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 # from waitress import serve
-import logging
-logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s',
-                    level=logging.INFO)
 
 app = Flask(__name__)
 auth = HTTPBasicAuth()
@@ -20,23 +16,13 @@ dynamodb_client = None
 cost_counter_table = None
 SINGLE_UPSTREAM_QUERY_COST = 0.1
 
-api_users = {
-    "exquote": generate_password_hash("exquotepass")
-}
-
-
-@auth.verify_password
-def verify_password(username, password):
-    if username in api_users and \
-            check_password_hash(api_users.get(username), password):
-        return username
-
 
 @app.route('/')
 def health_check():
     return jsonify("running")
 
 
+# initializes the redis and dynamodb clients and resets upstream requests counter
 @app.route('/init')
 def init():
     global redis_client
@@ -47,7 +33,15 @@ def init():
                                      aws_access_key_id="key",
                                      aws_secret_access_key="secert",
                                      endpoint_url="http://dynamodb:8000")
+    global cost_counter_table
+    cost_counter_table = dynamodb_client.Table("cost_counter_table")
+    # cost_counter_table.put_item(Item={"name": "cost_reset", "creation_time": str(datetime.now().timestamp())})
+    return jsonify("init done")
 
+
+# For dev env only creates a dynamodb table
+@app.route('/init_dev')
+def init_dev():
     try:
         dynamodb_client.create_table(
             TableName='cost_counter_table',
@@ -81,17 +75,17 @@ def init():
         print(err, flush=True)
     global cost_counter_table
     cost_counter_table = dynamodb_client.Table("cost_counter_table")
-    cost_counter_table.put_item(Item={"name": "cost_reset", "creation_time": str(datetime.now().timestamp())})
-    return jsonify("init done")
+    return "init dev done"
 
 
+# Get a quote by its symbol
 @app.route('/get_quote/<string:symbol>/')
 def get_quote(symbol):
     if ',' in symbol:
         return "Error! please query one symbol at a time"
     headers = {
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 '
-                      'Safari/537.36',
+                      'Safari/537.36'
     }
     quote = redis_client.get(symbol)
     if False and quote:
@@ -118,31 +112,57 @@ def get_quote(symbol):
         return quote
 
 
+# Calculate the upstream requests cost since last reset
 @app.route('/get_cost')
 def get_cost():
+    last_reset_time = get_newest_reset_counter_time()
+    if not last_reset_time:
+        last_reset_time = "0"
     scan = cost_counter_table.query(
-        KeyConditionExpression=Key('name').eq('cost_reset')
+        KeyConditionExpression=Key('name').eq('cost') & Key('creation_time').gt(last_reset_time)
     )
-    last_rest_time = 0
-    if len(scan['Items']):
-        last_rest_time = scan['Items'][0]['creation_time']
-    print(last_rest_time, flush=True)
-    scan = cost_counter_table.query(
-        KeyConditionExpression=Key('name').eq('cost') & Key('creation_time').gt(last_rest_time)
-    )
-    return str(len(scan['Items']) * round(SINGLE_UPSTREAM_QUERY_COST, 1))
+    count = len(scan['Items']) * SINGLE_UPSTREAM_QUERY_COST
+    return str(round(count, 1))
 
 
+# Add an object to counter table the resets the cost counter
 @app.route('/reset_cost_counter')
 def reset_cost_counter():
+    cost_counter_table.put_item(Item={"name": "cost_reset",
+                                      "creation_time": str(datetime.now().timestamp())})
+    return "reset done"
+
+
+# meant to be executed by a scheduler to purge old reset counters objs
+@app.route('/purge_cost_counter')
+def purge_cost_counter():
+    reset_counter = get_newest_reset_counter_time()
+    if not reset_counter:
+        return
     scan = cost_counter_table.query(
-        KeyConditionExpression=Key('name').eq('cost_reset')
+        KeyConditionExpression=Key('name').eq('cost_reset') & Key('creation_time').lt(reset_counter)
     )
     with cost_counter_table.batch_writer() as batch:
         for item in scan['Items']:
             batch.delete_item(Key={'name': item['name'], 'creation_time': item['creation_time']})
-    cost_counter_table.put_item(Item={"name": "cost_reset", "creation_time": str(datetime.now().timestamp())})
-    return "reset done"
+    scan = cost_counter_table.query(
+        KeyConditionExpression=Key('name').eq('cost') & Key('creation_time').lt(reset_counter)
+    )
+    with cost_counter_table.batch_writer() as batch:
+        for item in scan['Items']:
+            batch.delete_item(Key={'name': item['name'], 'creation_time': item['creation_time']})
+    return "purge done"
+
+
+def get_newest_reset_counter_time():
+    scan = cost_counter_table.query(
+        KeyConditionExpression=Key('name').eq('cost_reset'),
+        ScanIndexForward=False,
+        Limit=1
+    )
+    if len(scan['Items']):
+        return scan['Items'][0]['creation_time']
+    return None
 
 
 def calculate_cache_expiry(quote):
