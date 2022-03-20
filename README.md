@@ -34,9 +34,15 @@ To reset the cost calculator use:
   
   
 Notes:
+  
   The service was planned to work in large scale
+  
   Multiple copies of the container may be executed in parallel as far as they all talk with the same reids and dynamodb instances
+  
   A purge function for the dynamodb table data should be run with a schedualer (schedualer is not implemented)
+  
   For purging the table manually use: http://0.0.0.0:5001/purge_cost_counter
+
+  To purge the service containers on dev machine use: scripts/delete-docker-images.sh
 
 
