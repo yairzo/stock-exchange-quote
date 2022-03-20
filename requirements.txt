@@ -1,13 +1,8 @@
 flask~=2.0.2
-flask_httpauth
 flask_restful
 boto3==1.21.22
 datetime~=4.3
 botocore
-werkzeug~=2.0.2
-futures
-uuid
-waitress==2.1.1
 redis
 requests
 #APScheduler

@@ -5,12 +5,8 @@ from datetime import datetime
 import redis
 from boto3.dynamodb.conditions import Key
 from flask import Flask, jsonify
-from flask_httpauth import HTTPBasicAuth
-from werkzeug.security import generate_password_hash, check_password_hash
-# from waitress import serve
 
 app = Flask(__name__)
-auth = HTTPBasicAuth()
 redis_client = None
 dynamodb_client = None
 cost_counter_table = None
